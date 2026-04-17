@@ -181,38 +181,55 @@ export default function App() {
       // Smart Packager and Healer run globally if toggled, they don't get fully overridden, but BOA can optimize.
 
       if (enableBoardOfAgents) {
-        setMessages(prev => [...prev, { role: 'system', content: '🏛️ Board of Agents is delegating tasks...' }]);
-        const boaPrompt = `You are the Director of the Board of Agents. The user has requested: "${finalContent}".
-Available sub-agents:
-- "architect": highly detailed prompt engineering (best for vague requests).
-- "reviewer": code review (best for complex code generation).
-- "security": vulnerability scanning (best for backend/auth/database logic).
-- "toolVerifier": tool optimization tracking (best for massive file refactors).
-- "qa": automates unit tests (best if creating new functions or components).
-- "commiter": generates git commits (best if making file changes).
+        setMessages(prev => [...prev, { role: 'system', content: '🏛️ Board of Agents is analyzing the request to delegate tasks...' }]);
+        const boaPrompt = `You are the Director of the Board of Agents. Your job is to analyze the user's request and strategically activate specialized sub-agents to assist.
+User Request: "${finalContent}"
 
-Evaluate the user request. Which of these specialized agents are strictly necessary? Return ONLY a valid JSON array of strings, e.g. ["architect", "qa"]. If none, return [].`;
+Available Sub-Agents & Activation Criteria:
+1. "architect": Activate ONLY if the request is vague, high-level, or asks to build a complete feature from scratch without providing details. DO NOT activate for targeted bug fixes or simple questions.
+2. "reviewer": Activate ONLY if the request involves generating complex code, core algorithms, or significant refactoring.
+3. "security": Activate ONLY if the request involves authentication, database rules, file access, forms, input validation, or sensitive user data. 
+4. "toolVerifier": Activate ONLY for massive multi-file refactors where optimal tool usage is critical.
+5. "qa": Activate ONLY if the request involves writing new core business logic, backend routes, or complex utility functions that require unit testing. Do NOT activate for simple UI tweaks.
+6. "commiter": Activate ANYTIME the request will likely result in the agent modifying, creating, or deleting files in the codebase. Do NOT activate for informational queries.
+
+You must reply ONLY with a valid JSON object matching this exact schema:
+{
+  "reasoning": "Brief explanation of why you selected the specific agents based on the criteria.",
+  "selected_agents": ["array", "of", "agent_names"]
+}
+If no agents are needed, return an empty array for selected_agents.`;
         
         try {
           const boaResponse = await chat(baseUrl, selectedModel, [{role: 'system', content: boaPrompt}], undefined, provider, apiKeys);
-          const cleanedJson = boaResponse.replace(/```json/g, '').replace(/```/g, '').trim();
-          const selectedAgents = JSON.parse(cleanedJson);
           
-          if (Array.isArray(selectedAgents)) {
-            runArchitect = selectedAgents.includes('architect');
-            runReviewer = selectedAgents.includes('reviewer');
-            runSecurity = selectedAgents.includes('security');
-            runVerifier = selectedAgents.includes('toolVerifier');
-            runQA = selectedAgents.includes('qa');
-            runCommiter = selectedAgents.includes('commiter');
-            setMessages(prev => prev.filter(m => !m.content.includes('Board of Agents is delegating')));
-            if (selectedAgents.length > 0) {
-              setMessages(prev => [...prev, { role: 'system', content: `🏛️ Board delegated to: ${selectedAgents.join(', ')}` }]);
-            }
+          // Extract JSON robustly
+          let jsonStr = boaResponse;
+          const jsonMatch = boaResponse.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            jsonStr = jsonMatch[0];
+          }
+          const cleanedJson = jsonStr.replace(/```json/gi, '').replace(/```/gi, '').trim();
+          const parsed = JSON.parse(cleanedJson);
+          const selectedAgents = Array.isArray(parsed.selectedAgents) ? parsed.selectedAgents : (Array.isArray(parsed.selected_agents) ? parsed.selected_agents : []);
+          
+          runArchitect = selectedAgents.includes('architect');
+          runReviewer = selectedAgents.includes('reviewer');
+          runSecurity = selectedAgents.includes('security');
+          runVerifier = selectedAgents.includes('toolVerifier');
+          runQA = selectedAgents.includes('qa');
+          runCommiter = selectedAgents.includes('commiter');
+          
+          setMessages(prev => prev.filter(m => !m.content.includes('Board of Agents is analyzing')));
+          
+          if (selectedAgents.length > 0) {
+            setMessages(prev => [...prev, { role: 'system', content: `🏛️ Board delegated to: **${selectedAgents.join(', ')}**\n*Reasoning:* ${parsed.reasoning || 'Optimizing workflow.'}` }]);
+          } else {
+            setMessages(prev => [...prev, { role: 'system', content: `🏛️ Board decided no sub-agents are needed for this task.` }]);
           }
         } catch(e) {
           console.warn("BOA JSON parse failed, bypassing Board delegation.", e);
-          setMessages(prev => prev.filter(m => !m.content.includes('Board of Agents is delegating')));
+          setMessages(prev => prev.filter(m => !m.content.includes('Board of Agents is analyzing')));
         }
       }
 
