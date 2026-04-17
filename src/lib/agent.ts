@@ -14,7 +14,7 @@ export const ALL_TOOLS: Record<string, string> = {
   insert_code: 'insert_code: Insert code before or after a specific unique anchor string. Args: { "path": "string", "anchor_string": "string", "position": "before" | "after", "insert_content": "string" }',
   delete: 'delete: Delete a file or directory. Args: { "path": "string" }',
   file_search: 'file_search: Search for a specific text string across all files in the project. Args: { "query": "string" }',
-  update_memory: 'update_memory: Append important context, project rules, or conversation summaries to a \'memory.md\' file so you remember it in future sessions. Args: { "content": "string" }',
+  update_memory: 'update_memory: Append important context, project rules, or conversation summaries to the end of the \'memory.md\' file. Your input will be automatically appended safely. Args: { "content": "string" }',
   read_memory: 'read_memory: Read the \'memory.md\' file to recall previous context. Args: {}',
   edit_memory_file: 'edit_memory_file: Replace a specific string in \'memory.md\'. Args: { "search": "string", "replace": "string" }',
   execute_js: 'execute_js: Run JavaScript code in a secure sandboxed environment to test logic, process data, or debug. Returns console logs and the final result. Args: { "code": "string" }',
@@ -26,6 +26,7 @@ export const ALL_TOOLS: Record<string, string> = {
   create_dir: 'create_dir: Create a new directory or nested directories. Args: { "path": "string" }',
   get_file_skeleton: 'get_file_skeleton: Extract the skeleton (exports, functions, classes) of a file to understand its structure without reading the whole file. Args: { "path": "string" }',
   semantic_search: 'semantic_search: Search for code by meaning rather than exact keywords using vector embeddings. Args: { "query": "string" }',
+  search_memory: 'search_memory: Searches the offline memory.md database for specific keywords to filter out relevant rules or knowledge chunks. Args: { "query": "string" }',
   run_terminal_command: 'run_terminal_command: Run a terminal command (e.g., npm install). Note: Since you are in a browser environment, this will ask the user to run it and provide the output. Args: { "command": "string" }',
   run_tests: 'run_tests: Executes `npm test` and returns the output. If tests fail, highlight the failing tests. Note: Asks the user to run it locally. Args: {}'
 };
@@ -150,6 +151,29 @@ export async function executeTool(
         // or embed the query and compare with a small set of files.
         return `Semantic search initiated for: "${args.query}".\n(Note: Full vector search is limited in browser. Using enhanced keyword matching...)\n` + 
                await executeTool('file_search', { query: args.query }, dirHandle, confirmCallback, onUpdateChecklist, ollamaConfig);
+               
+      case 'search_memory':
+        try {
+          const memContent = await readFile(dirHandle!, 'memory.md');
+          const chunks = memContent.split('\n\n');
+          const queryWords = args.query.toLowerCase().split(' ');
+          
+          let scoredChunks = chunks.map(chunk => {
+            const chunkLower = chunk.toLowerCase();
+            let score = 0;
+            queryWords.forEach((word: string) => {
+              if (chunkLower.includes(word)) score += 1;
+            });
+            return { chunk, score };
+          });
+          
+          scoredChunks = scoredChunks.filter(c => c.score > 0).sort((a, b) => b.score - a.score);
+          if (scoredChunks.length === 0) return "No matches found in memory.";
+          
+          return "Memory Database Snippets:\n" + scoredChunks.slice(0, 5).map(c => c.chunk).join('\n\n---\n\n');
+        } catch (e) {
+          return "Error: Memory Database is empty or does not exist.";
+        }
 
       case 'run_terminal_command':
         return `COMMAND QUEUED: \`${args.command}\`\n\nI cannot run native terminal commands directly in the browser. Please ask the user to run this command in their local terminal and paste the output back here.`;

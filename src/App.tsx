@@ -31,7 +31,14 @@ export default function App() {
   const [enableInternet, setEnableInternet] = useState(false);
   const [enableReviewer, setEnableReviewer] = useState(false);
   const [enablePromptArchitect, setEnablePromptArchitect] = useState(false);
+  const [promptArchitectMaxWords, setPromptArchitectMaxWords] = useState(200);
   const [enableSecurityAuditor, setEnableSecurityAuditor] = useState(false);
+  const [enableToolVerifier, setEnableToolVerifier] = useState(false);
+  const [enableBoardOfAgents, setEnableBoardOfAgents] = useState(false);
+  const [enableAutoTests, setEnableAutoTests] = useState(false);
+  const [enableAutoHealer, setEnableAutoHealer] = useState(true);
+  const [enableSmartPackager, setEnableSmartPackager] = useState(true);
+  const [enableAutoCommiter, setEnableAutoCommiter] = useState(false);
   const [customInstructions, setCustomInstructions] = useState('');
   const [enabledTools, setEnabledTools] = useState<Record<string, boolean>>({});
 
@@ -141,6 +148,16 @@ export default function App() {
       }
     }
 
+    if (prefilledInput) {
+      finalContent = `${prefilledInput}\n\n${finalContent}`;
+      setPrefilledInput('');
+    }
+
+    // Auto-Healer Hook
+    if (enableAutoHealer && (finalContent.includes('Uncaught') || finalContent.includes('Error:') || /at .*:\d+:\d+/.test(finalContent) || finalContent.includes('Stack trace:'))) {
+        finalContent = `CRASH AUTO-HEALER INITIATED:\nI received the following crash/error log from the console/browser:\n\n${finalContent}\n\nPlease immediately diagnose this error. Read the relevant files mentioned in the logs, pinpoint the issue, and apply a fix immediately.`;
+    }
+
     const userMsg: ChatMessage = { role: 'user', content: finalContent };
     if (images.length > 0) {
       userMsg.images = images;
@@ -151,27 +168,73 @@ export default function App() {
     setIsLoading(true);
 
     try {
+      const currentModelObj = models.find(m => m.name === selectedModel);
+      const provider = currentModelObj?.provider || 'ollama';
+
+      // Capture active sub-agents for this run
+      let runArchitect = enablePromptArchitect && !enableBoardOfAgents;
+      let runReviewer = enableReviewer && !enableBoardOfAgents;
+      let runSecurity = enableSecurityAuditor && !enableBoardOfAgents;
+      let runVerifier = enableToolVerifier && !enableBoardOfAgents;
+      let runQA = enableAutoTests && !enableBoardOfAgents;
+      let runCommiter = enableAutoCommiter && !enableBoardOfAgents;
+      // Smart Packager and Healer run globally if toggled, they don't get fully overridden, but BOA can optimize.
+
+      if (enableBoardOfAgents) {
+        setMessages(prev => [...prev, { role: 'system', content: '🏛️ Board of Agents is delegating tasks...' }]);
+        const boaPrompt = `You are the Director of the Board of Agents. The user has requested: "${finalContent}".
+Available sub-agents:
+- "architect": highly detailed prompt engineering (best for vague requests).
+- "reviewer": code review (best for complex code generation).
+- "security": vulnerability scanning (best for backend/auth/database logic).
+- "toolVerifier": tool optimization tracking (best for massive file refactors).
+- "qa": automates unit tests (best if creating new functions or components).
+- "commiter": generates git commits (best if making file changes).
+
+Evaluate the user request. Which of these specialized agents are strictly necessary? Return ONLY a valid JSON array of strings, e.g. ["architect", "qa"]. If none, return [].`;
+        
+        try {
+          const boaResponse = await chat(baseUrl, selectedModel, [{role: 'system', content: boaPrompt}], undefined, provider, apiKeys);
+          const cleanedJson = boaResponse.replace(/```json/g, '').replace(/```/g, '').trim();
+          const selectedAgents = JSON.parse(cleanedJson);
+          
+          if (Array.isArray(selectedAgents)) {
+            runArchitect = selectedAgents.includes('architect');
+            runReviewer = selectedAgents.includes('reviewer');
+            runSecurity = selectedAgents.includes('security');
+            runVerifier = selectedAgents.includes('toolVerifier');
+            runQA = selectedAgents.includes('qa');
+            runCommiter = selectedAgents.includes('commiter');
+            setMessages(prev => prev.filter(m => !m.content.includes('Board of Agents is delegating')));
+            if (selectedAgents.length > 0) {
+              setMessages(prev => [...prev, { role: 'system', content: `🏛️ Board delegated to: ${selectedAgents.join(', ')}` }]);
+            }
+          }
+        } catch(e) {
+          console.warn("BOA JSON parse failed, bypassing Board delegation.", e);
+          setMessages(prev => prev.filter(m => !m.content.includes('Board of Agents is delegating')));
+        }
+      }
+
       // Phase 1: Prompt Architect
-      if (enablePromptArchitect && finalContent.trim().length > 0 && finalContent.trim().length < 500) {
+      if (runArchitect && finalContent.trim().length > 0) {
         setMessages(prev => [...prev, { role: 'system', content: 'Prompt Architect is enhancing your request...' }]);
-        const architectPrompt = `You are an expert AI Prompt Engineer. The user wants to ask a coding agent to do the following: "${finalContent}". 
-Rewrite this request into a highly detailed, professional prompt. Include best practices, potential edge cases to watch out for, and clear step-by-step instructions. Output ONLY the enhanced prompt, nothing else.`;
+        const architectPrompt = `You are an expert AI Prompt Engineer...`; // Truncated original, restoring next line
+        const fullArchitectPrompt = `You are an expert AI Prompt Engineer. The user wants to ask a coding agent to do the following: "${finalContent}". 
+Rewrite this request into a highly detailed, professional prompt. Include best practices, potential edge cases to watch out for, and clear step-by-step instructions. 
+CRITICAL: Do NOT exceed ${promptArchitectMaxWords} words in your final output so the agent doesn't get overwhelmed. Output ONLY the enhanced prompt, nothing else.`;
         
-        const currentModelObj = models.find(m => m.name === selectedModel);
-        const provider = currentModelObj?.provider || 'ollama';
-        const enhancedInput = await chat(baseUrl, selectedModel, [{ role: 'user', content: architectPrompt }], undefined, provider, apiKeys);
+        const enhancedInput = await chat(baseUrl, selectedModel, [{ role: 'user', content: fullArchitectPrompt }], undefined, provider, apiKeys);
         
-        // Remove the "enhancing" message
         setMessages(prev => prev.filter(m => m.content !== 'Prompt Architect is enhancing your request...'));
-        
-        // Add the enhanced prompt as a system message so the user sees it and the agent reads it
         const enhancedMsg: ChatMessage = { role: 'system', content: `**Prompt Architect Enhanced Request:**\n\n${enhancedInput}` };
         currentMessages = [...currentMessages, enhancedMsg];
         setMessages(currentMessages);
       }
 
       // Phase 2: Main Agent Loop
-      await runAgentLoop(currentMessages);
+      const runFlags = { runReviewer, runSecurity, runVerifier, runQA, runCommiter };
+      await runAgentLoop(currentMessages, runFlags, provider);
     } catch (e: any) {
       setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${e.message}` }]);
     } finally {
@@ -179,13 +242,11 @@ Rewrite this request into a highly detailed, professional prompt. Include best p
     }
   };
 
-  const runAgentLoop = async (currentMessages: ChatMessage[]) => {
+  const runAgentLoop = async (currentMessages: ChatMessage[], runFlags: { runReviewer: boolean, runSecurity: boolean, runVerifier: boolean, runQA: boolean, runCommiter: boolean }, provider: string) => {
     let loopMessages = [...currentMessages];
     let toolCallCount = 0;
     const MAX_TOOL_CALLS = 10; // Prevent infinite loops
-    
-    const currentModelObj = models.find(m => m.name === selectedModel);
-    const provider = currentModelObj?.provider || 'ollama';
+    let filesModified = false;
     
     while (toolCallCount < MAX_TOOL_CALLS) {
       // Add a temporary assistant message for streaming
@@ -212,6 +273,11 @@ Rewrite this request into a highly detailed, professional prompt. Include best p
         if (toolCall.name === 'error') {
           toolResult = toolCall.error || 'Unknown JSON parse error.';
         } else {
+          // Check if file modification occurred
+          if (['write_file', 'write_batch_files', 'edit_file_by_lines', 'find_and_replace_in_file', 'insert_at_line', 'delete', 'create_dir'].includes(toolCall.name)) {
+            filesModified = true;
+          }
+
           // Execute tool
           toolResult = await executeTool(
             toolCall.name, 
@@ -235,7 +301,7 @@ Rewrite this request into a highly detailed, professional prompt. Include best p
         // No tool call, agent is done. Check if Reviewer or Auditor are enabled.
         let needsFix = false;
 
-        if (enableReviewer) {
+        if (runFlags.runReviewer) {
           setMessages(prev => [...prev, { role: 'system', content: 'Senior Reviewer is analyzing the changes...' }]);
           
           const reviewerPrompt = `You are a Senior Code Reviewer. Review the previous actions and code written by the agent. 
@@ -260,7 +326,7 @@ If there are issues, explain them clearly so the agent can fix them. Do not writ
           }
         }
 
-        if (!needsFix && enableSecurityAuditor) {
+        if (!needsFix && runFlags.runSecurity) {
           setMessages(prev => [...prev, { role: 'system', content: 'Security Auditor is scanning for vulnerabilities...' }]);
           
           const securityPrompt = `You are a strict Security Auditor. Review the previous actions and code written by the agent. 
@@ -286,10 +352,69 @@ If vulnerabilities exist, explain them clearly so the agent can fix them.`;
           }
         }
 
+        if (!needsFix && runFlags.runVerifier) {
+          setMessages(prev => [...prev, { role: 'system', content: 'Tool Inspector is verifying correct API usage...' }]);
+          
+          const verifierPrompt = `You are a strict Tool Usage Inspector. Review the previous actions and tools used by the primary agent.
+Did the agent use tools optimally and safely? For example: using 'edit_file_by_lines' or 'insert_code' instead of 'write_file' for small changes in large files, avoiding redundant reads, and properly formatting tool JSON.
+If tool usage is optimal and correct, reply ONLY with the exact word "OPTIMAL".
+If the tools were used inefficiently, used dangerously, or hallucinated, explain the flaws strictly so the agent can learn and fix them using better tool selections.`;
+          
+          const verifierMessages = [...loopMessages, { role: 'user', content: verifierPrompt } as ChatMessage];
+          const verifierResponse = await chat(baseUrl, selectedModel, verifierMessages, undefined, provider, apiKeys);
+          
+          setMessages(prev => prev.filter(m => m.content !== 'Tool Inspector is verifying correct API usage...'));
+          
+          if (verifierResponse.trim() === 'OPTIMAL') {
+            setMessages(prev => [...prev, { role: 'system', content: '🔧 Tool Inspector found no efficiency issues.' }]);
+          } else {
+            const feedbackMsg: ChatMessage = { 
+              role: 'user', 
+              content: `[Tool Inspector Feedback]:\n${verifierResponse}\n\nPlease redo your action using the correct and optimal tools.` 
+            };
+            loopMessages.push(feedbackMsg);
+            setMessages([...loopMessages]);
+            needsFix = true;
+          }
+        }
+
         if (needsFix) {
           continue; // Loop continues so the agent can fix the issues
         } else {
-          break; // Done
+          // End of loop processing (QA, Packager, Commiter)
+          if (filesModified && runFlags.runQA) {
+            setMessages(prev => [...prev, { role: 'system', content: '🧪 QA Automator is generating unit tests...' }]);
+            const qaPrompt = `You are a QA Automator. Review the files just modified in this session. 
+Write automated unit tests (.test.js or .test.tsx) for the new or modified logic. Generate the tool calls to save these test files now.`;
+            loopMessages.push({ role: 'user', content: qaPrompt });
+            setMessages([...loopMessages]);
+            continue; // Spin the agent loop one more time to write tests
+          }
+
+          if (enableSmartPackager && filesModified) {
+            try {
+              const packagerPrompt = `Review the code changes made. Are there any new third-party npm packages imported that might need installation? Reply ONLY with space-separated package names, or "NONE" if dependencies are standard or already exist.`;
+              const pkgResponse = await chat(baseUrl, selectedModel, [...loopMessages, { role: 'user', content: packagerPrompt }], undefined, provider, apiKeys);
+              const pkgs = pkgResponse.trim();
+              if (pkgs !== 'NONE' && pkgs.length > 0 && !pkgs.includes(' ')) { // Basic sanity check
+                 setMessages(prev => [...prev, { role: 'system', content: `📦 Smart Packager detected missing imports. You may need to run:\n\n\`npm install ${pkgs}\`` }]);
+              }
+            } catch (e) {
+              // Ignore packager failure non-intrusively
+            }
+          }
+
+          if (runFlags.runCommiter && filesModified) {
+            try {
+              const commiterPrompt = `Write a clean, concise 'git commit -m' message summarizing the changes just made in this session. Reply ONLY with the git command.`;
+              const commitResponse = await chat(baseUrl, selectedModel, [...loopMessages, { role: 'user', content: commiterPrompt }], undefined, provider, apiKeys);
+              setMessages(prev => [...prev, { role: 'system', content: `📝 Auto-Commiter suggests:\n\n\`${commitResponse.trim()}\`` }]);
+            } catch (e) {
+              // Ignore commiter failure
+            }
+          }
+
+          break; // Done with all fixes and automations
         }
       }
     }
@@ -485,70 +610,182 @@ If vulnerabilities exist, explain them clearly so the agent can fix them.`;
 
               {/* Toggles */}
               <div className="space-y-4 pt-2">
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    checked={enableThinking}
-                    onChange={(e) => setEnableThinking(e.target.checked)}
-                    className="w-4 h-4 rounded border-gray-700 text-green-500 focus:ring-green-500 focus:ring-offset-gray-900 bg-gray-900"
-                  />
-                  <div>
-                    <div className="text-sm font-medium text-gray-300">Enable Thinking Process</div>
-                    <div className="text-xs text-gray-500">Allows the agent to reason step-by-step before answering.</div>
-                  </div>
-                </label>
+                
+                <div className="p-3 bg-red-900/20 border border-red-900/50 rounded-lg">
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={enableBoardOfAgents}
+                      onChange={(e) => {
+                        const val = e.target.checked;
+                        setEnableBoardOfAgents(val);
+                        if (val) {
+                          setEnablePromptArchitect(false);
+                          setEnableReviewer(false);
+                          setEnableSecurityAuditor(false);
+                          setEnableToolVerifier(false);
+                          setEnableAutoTests(false);
+                          setEnableAutoCommiter(false);
+                        }
+                      }}
+                      className="w-4 h-4 rounded border-gray-700 text-red-500 focus:ring-red-500 focus:ring-offset-gray-900 bg-gray-900"
+                    />
+                    <div>
+                      <div className="text-sm font-bold text-red-400">Board of Agents (Master Orchestrator)</div>
+                      <div className="text-xs text-gray-400">Dynamically analyzes your request and enables specific sub-agents ONLY when needed. (Overrides manual toggles below).</div>
+                    </div>
+                  </label>
+                </div>
 
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    checked={enableInternet}
-                    onChange={(e) => setEnableInternet(e.target.checked)}
-                    className="w-4 h-4 rounded border-gray-700 text-green-500 focus:ring-green-500 focus:ring-offset-gray-900 bg-gray-900"
-                  />
-                  <div>
-                    <div className="text-sm font-medium text-gray-300">Enable Internet Access</div>
-                    <div className="text-xs text-gray-500">Allows the agent to search the web and read URLs to solve problems.</div>
-                  </div>
-                </label>
+                <div className={`space-y-4 pl-2 ${enableBoardOfAgents ? 'opacity-50 pointer-events-none' : ''}`}>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={enableThinking}
+                      onChange={(e) => setEnableThinking(e.target.checked)}
+                      className="w-4 h-4 rounded border-gray-700 text-green-500 focus:ring-green-500 focus:ring-offset-gray-900 bg-gray-900"
+                    />
+                    <div>
+                      <div className="text-sm font-medium text-gray-300">Enable Thinking Process</div>
+                      <div className="text-xs text-gray-500">Allows the agent to reason step-by-step before answering.</div>
+                    </div>
+                  </label>
 
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    checked={enableReviewer}
-                    onChange={(e) => setEnableReviewer(e.target.checked)}
-                    className="w-4 h-4 rounded border-gray-700 text-green-500 focus:ring-green-500 focus:ring-offset-gray-900 bg-gray-900"
-                  />
-                  <div>
-                    <div className="text-sm font-medium text-gray-300">Enable Senior Reviewer</div>
-                    <div className="text-xs text-gray-500">A second agent will review and critique code before it's finalized.</div>
-                  </div>
-                </label>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={enableInternet}
+                      onChange={(e) => setEnableInternet(e.target.checked)}
+                      className="w-4 h-4 rounded border-gray-700 text-green-500 focus:ring-green-500 focus:ring-offset-gray-900 bg-gray-900"
+                    />
+                    <div>
+                      <div className="text-sm font-medium text-gray-300">Enable Internet Access</div>
+                      <div className="text-xs text-gray-500">Allows the agent to search the web and read URLs to solve problems.</div>
+                    </div>
+                  </label>
 
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    checked={enablePromptArchitect}
-                    onChange={(e) => setEnablePromptArchitect(e.target.checked)}
-                    className="w-4 h-4 rounded border-gray-700 text-green-500 focus:ring-green-500 focus:ring-offset-gray-900 bg-gray-900"
-                  />
-                  <div>
-                    <div className="text-sm font-medium text-gray-300">Enable Prompt Architect</div>
-                    <div className="text-xs text-gray-500">A sub-agent that rewrites your short requests into highly detailed, professional prompts.</div>
-                  </div>
-                </label>
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={enableReviewer}
+                      onChange={(e) => setEnableReviewer(e.target.checked)}
+                      className="w-4 h-4 rounded border-gray-700 text-green-500 focus:ring-green-500 focus:ring-offset-gray-900 bg-gray-900"
+                    />
+                    <div>
+                      <div className="text-sm font-medium text-gray-300">Enable Senior Reviewer</div>
+                      <div className="text-xs text-gray-500">A second agent will review and critique code before it's finalized.</div>
+                    </div>
+                  </label>
 
-                <label className="flex items-center gap-3 cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    checked={enableSecurityAuditor}
-                    onChange={(e) => setEnableSecurityAuditor(e.target.checked)}
-                    className="w-4 h-4 rounded border-gray-700 text-green-500 focus:ring-green-500 focus:ring-offset-gray-900 bg-gray-900"
-                  />
                   <div>
-                    <div className="text-sm font-medium text-gray-300">Enable Security Auditor</div>
-                    <div className="text-xs text-gray-500">A specialized sub-agent that checks code for vulnerabilities (XSS, SQLi, etc.) after execution.</div>
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={enablePromptArchitect}
+                        onChange={(e) => setEnablePromptArchitect(e.target.checked)}
+                        className="w-4 h-4 rounded border-gray-700 text-green-500 focus:ring-green-500 focus:ring-offset-gray-900 bg-gray-900"
+                      />
+                      <div>
+                        <div className="text-sm font-medium text-gray-300">Enable Prompt Architect</div>
+                        <div className="text-xs text-gray-500">A sub-agent that rewrites your short requests into highly detailed, professional prompts.</div>
+                      </div>
+                    </label>
+                    {enablePromptArchitect && !enableBoardOfAgents && (
+                      <div className="ml-7 mt-2 flex items-center gap-2">
+                        <span className="text-xs text-gray-400">Max word length:</span>
+                        <input 
+                          type="number" 
+                          value={promptArchitectMaxWords}
+                          onChange={(e) => setPromptArchitectMaxWords(Number(e.target.value))}
+                          className="bg-gray-900 border border-gray-700 rounded px-2 py-1 text-xs text-white w-20 focus:outline-none focus:border-green-500"
+                        />
+                      </div>
+                    )}
                   </div>
-                </label>
+
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={enableSecurityAuditor}
+                      onChange={(e) => setEnableSecurityAuditor(e.target.checked)}
+                      className="w-4 h-4 rounded border-gray-700 text-green-500 focus:ring-green-500 focus:ring-offset-gray-900 bg-gray-900"
+                    />
+                    <div>
+                      <div className="text-sm font-medium text-gray-300">Enable Security Auditor</div>
+                      <div className="text-xs text-gray-500">A specialized sub-agent that checks code for vulnerabilities (XSS, SQLi, etc.) after execution.</div>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={enableToolVerifier}
+                      onChange={(e) => setEnableToolVerifier(e.target.checked)}
+                      className="w-4 h-4 rounded border-gray-700 text-green-500 focus:ring-green-500 focus:ring-offset-gray-900 bg-gray-900"
+                    />
+                    <div>
+                      <div className="text-sm font-medium text-gray-300">Enable Tool Usage Inspector</div>
+                      <div className="text-xs text-gray-500">A sub-agent that verifies if the primary agent used files and tools optimally.</div>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={enableAutoTests}
+                      onChange={(e) => setEnableAutoTests(e.target.checked)}
+                      className="w-4 h-4 rounded border-gray-700 text-green-500 focus:ring-green-500 focus:ring-offset-gray-900 bg-gray-900"
+                    />
+                    <div>
+                      <div className="text-sm font-medium text-gray-300">Enable QA Automator (Tests)</div>
+                      <div className="text-xs text-gray-500">Automatically writes unit tests (.test.tsx) for any new code logic the agent creates.</div>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={enableAutoCommiter}
+                      onChange={(e) => setEnableAutoCommiter(e.target.checked)}
+                      className="w-4 h-4 rounded border-gray-700 text-green-500 focus:ring-green-500 focus:ring-offset-gray-900 bg-gray-900"
+                    />
+                    <div>
+                      <div className="text-sm font-medium text-gray-300">Enable Auto-Commiter (Git)</div>
+                      <div className="text-xs text-gray-500">Synthesizes a clean git commit message immediately after modifications.</div>
+                    </div>
+                  </label>
+                </div>
+
+                {/* Independent Global Automations */}
+                <div className="space-y-4 pt-4 border-t border-gray-800">
+                  <label className="block text-sm font-medium text-gray-300">Global Event Automations</label>
+                  
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={enableAutoHealer}
+                      onChange={(e) => setEnableAutoHealer(e.target.checked)}
+                      className="w-4 h-4 rounded border-gray-700 text-green-500 focus:ring-green-500 focus:ring-offset-gray-900 bg-gray-900"
+                    />
+                    <div>
+                      <div className="text-sm font-medium text-gray-300">Crash Auto-Healer</div>
+                      <div className="text-xs text-gray-500">When you paste errors or stack traces, format them into an urgent debugging mission automatically.</div>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center gap-3 cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={enableSmartPackager}
+                      onChange={(e) => setEnableSmartPackager(e.target.checked)}
+                      className="w-4 h-4 rounded border-gray-700 text-green-500 focus:ring-green-500 focus:ring-offset-gray-900 bg-gray-900"
+                    />
+                    <div>
+                      <div className="text-sm font-medium text-gray-300">Smart Package Manager</div>
+                      <div className="text-xs text-gray-500">Monitors code output and prompts you to install detected missing npm packages.</div>
+                    </div>
+                  </label>
+                </div>
               </div>
 
               {/* Tool Toggles */}

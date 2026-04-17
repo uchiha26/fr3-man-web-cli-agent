@@ -20,9 +20,16 @@ Because of this, **Fr3 Man officially only supports chromium-based browsers**:
 
 - **Direct File System Access:** Browser-native code editing locally securely.
 - **Model Agnostic & Local AI:** Out-of-the-box integration with [Ollama](https://ollama.com/) or Cloud providers (OpenAI, Anthropic, Gemini).
-- **Multi-Phase Pipeline:**
-  - *Prompt Architect:* Enhances instructions transparently.
+- **Multi-Phase Pipeline & Autonomous Agents:**
+  - *Board of Agents:* A master orchestrator that dynamically reads your prompt and summons ONLY the sub-agents strictly necessary for the task, saving compute and time.
+  - *Prompt Architect:* Enhances instructions transparently (with configurable max word limits to prevent context overflow).
   - *Senior Reviewer:* Automatically reviews the agent's code.
+  - *Security Auditor:* Scans for vulnerabilities like XSS or exposed keys.
+  - *Tool Usage Inspector:* Validates whether the agent used file-system tools optimally (e.g., preventing inefficient full-file rewrites).
+  - *QA Automator:* Automatically writes `.test.tsx` / `.test.js` files for any new components or functions you build.
+  - *Auto-Commiter:* Synthesizes and provides a perfect `git commit -m "..."` command immediately after file changes.
+  - *Crash Auto-Healer:* Paste an error log or stack trace in the chat, and the agent auto-formats it into an urgent debugging mission, tracks down the file, and fixes the bug automatically.
+  - *Smart Package Manager:* Scans code changes and smartly alerts you to run `npm install` for any detected missing packages.
   - *Mission Checklist:* Generates and manages complex tasks.
 - **Sandboxed Execution:** Runs JavaScript natively in browser.
 - **Project File Explorer:** Interactive and auto-refreshing project navigation.
