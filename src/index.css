@@ -1,0 +1,28 @@
+@import "tailwindcss";
+
+@layer utilities {
+  .prose pre {
+    @apply bg-[#1a1a1a] border border-gray-800 rounded-md p-4 overflow-x-auto;
+  }
+  .prose code {
+    @apply bg-[#1a1a1a] text-green-400 px-1.5 py-0.5 rounded text-sm font-mono;
+  }
+  .prose pre code {
+    @apply bg-transparent text-gray-300 p-0 text-sm;
+  }
+  .prose p {
+    @apply mb-4 leading-relaxed;
+  }
+  .prose p:last-child {
+    @apply mb-0;
+  }
+  .prose a {
+    @apply text-green-400 hover:text-green-300 underline underline-offset-2;
+  }
+  .prose ul {
+    @apply list-disc list-inside mb-4 space-y-1;
+  }
+  .prose ol {
+    @apply list-decimal list-inside mb-4 space-y-1;
+  }
+}

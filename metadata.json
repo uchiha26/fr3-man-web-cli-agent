@@ -1,0 +1,6 @@
+{
+  "name": "Ollama CodeAgent",
+  "description": "A browser-based coding agent CLI that uses local Ollama models and the File System Access API to edit local files.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
