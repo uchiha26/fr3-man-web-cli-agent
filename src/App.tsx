@@ -6,7 +6,7 @@ import { getModels, OllamaModel, ChatMessage, chat } from './lib/ollama';
 import { getSystemPrompt, parseToolCall, executeTool, ALL_TOOLS } from './lib/agent';
 import { verifyPermission, readFile, writeFile } from './lib/fs';
 import { get, set } from 'idb-keyval';
-import { Settings, X, AlertTriangle, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { Settings, X, AlertTriangle, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Heart, CreditCard } from 'lucide-react';
 
 const MEMORY_FILE = '.agent-memory.json';
 
@@ -492,6 +492,28 @@ Write automated unit tests (.test.js or .test.tsx) for the new or modified logic
         </div>
         
         <div className="flex items-center gap-2">
+          {/* Donation Buttons */}
+          <div className="flex items-center gap-2 mr-4 border-r border-gray-800 pr-4 hidden sm:flex">
+            <a 
+              href="https://www.paypal.com/cgi-bin/webscr?cmd=_donations&business=white_angel_andrey@yahoo.com&currency_code=USD" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-1 bg-blue-900/40 hover:bg-blue-800/60 border border-blue-700/50 rounded-full text-blue-400 hover:text-blue-300 transition-colors text-xs font-medium"
+            >
+              <Heart className="w-3 h-3" />
+              <span>PayPal</span>
+            </a>
+            <a 
+              href="https://revolut.me/andreicc" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="flex items-center gap-1.5 px-3 py-1 bg-pink-900/40 hover:bg-pink-800/60 border border-pink-700/50 rounded-full text-pink-400 hover:text-pink-300 transition-colors text-xs font-medium"
+            >
+              <CreditCard className="w-3 h-3" />
+              <span>Revolut</span>
+            </a>
+          </div>
+
           <button 
             onClick={() => setShowChecklist(!showChecklist)}
             className="p-1.5 hover:bg-gray-800 rounded text-gray-400 hover:text-gray-200 transition-colors"
