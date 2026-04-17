@@ -4,7 +4,7 @@ Welcome to the **Fr3 Man Web CLI Agent**, a highly intelligent, browser-based co
 
 It provides an intuitive ChatGPT-like terminal interface stacked with robust file-system operations, mimicking an elite 10x coding agent experience.
 
-![Fr3 Man UI](https://via.placeholder.com/800x400?text=Fr3+Man+Web+CLI+Agent)
+![Fr3 Man UI](https://i.ibb.co/Q7KBqw0n/image-2026-04-17-164827801.png)
 
 ## ⚠️ Browser Compatibility
 
