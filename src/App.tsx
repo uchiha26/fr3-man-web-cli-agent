@@ -32,7 +32,7 @@ export default function App() {
   const [enableReviewer, setEnableReviewer] = useState(false);
   const [enablePromptArchitect, setEnablePromptArchitect] = useState(false);
   const [promptArchitectMaxWords, setPromptArchitectMaxWords] = useState(200);
-  const [ollamaContextLength, setOllamaContextLength] = useState(32768);
+  const [ollamaContextLength, setOllamaContextLength] = useState(0);
   const [enableSecurityAuditor, setEnableSecurityAuditor] = useState(false);
   const [enableToolVerifier, setEnableToolVerifier] = useState(false);
   const [enableBoardOfAgents, setEnableBoardOfAgents] = useState(false);
@@ -693,10 +693,10 @@ Write automated unit tests (.test.js or .test.tsx) for the new or modified logic
                     type="number" 
                     value={ollamaContextLength}
                     onChange={(e) => setOllamaContextLength(Number(e.target.value))}
-                    placeholder="32768"
+                    placeholder="0 = Server Default (e.g. 8k or 32k)"
                     className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-green-500"
                   />
-                  <p className="text-xs text-gray-500">Default to 32768. Reduce if you run out of VRAM/RAM.</p>
+                  <p className="text-xs text-gray-500">Leave at 0 to use server default. Cloud models might reject custom overrides.</p>
                 </div>
 
                 <div className="space-y-2 pt-2 border-t border-gray-800">

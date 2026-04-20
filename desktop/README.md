@@ -6,21 +6,28 @@ This is a **STANDALONE** product completely independent from the web browser or 
 
 ---
 
-## 🛠️ How to Run the Desktop App (Development)
+## ✨ Latest Core Enhancements
 
-You no longer need to worry about manually transferring build files. From the **MAIN ROOT FOLDER** of your entire project (one directory above this one), simply run our all-in-one command:
+- **Native Cloud and Local LLM Auto-Heal:** Feature fallback methodologies dynamically drop restricted context limits to "0" (server default) on 500 errors to ensure uninterrupted remote processing.
+- **Stop Generation Control:** Integrated internal AbortControllers to enable immediate action halting.
+- **Remote Security Validation:** Full support for custom API Keys / Bearer Tokens meant explicitly for remote cloud Ollama endpoints.
+
+---
+
+## ⚡ Quick Start: All-In-One Native Command
+
+To leap directly into testing the native windows architecture straight from your OS terminal, simply paste the following string:
 
 ```bash
-npm run start:desktop
+git clone https://github.com/uchiha26/fr3-man-web-cli-agent.git && cd fr3-man-web-cli-agent && npm run start:desktop
 ```
 
-**What this command does automatically:**
-1. Triggers the Vite production build of the React app.
-2. Copies the freshly compiled UI offline files straight into `desktop/dist`.
-3. Installs the required Electron dependencies (if skipped).
-4. Launches the native standalone Electron window on your computer screen.
-
-*(If you ever find yourself manually inside this `desktop` folder with a terminal and the `dist` folder is already populated, you can simply run `npm install` followed by `npm start`.)*
+**What this command sequence does automatically:**
+1. Clones the remote base repository automatically.
+2. Triggers the Vite production build of the React app inside the main root folder.
+3. Copies the freshly compiled UI offline files inside `desktop/dist`.
+4. Installs the required Electron desktop-layer dependencies.
+5. Launches the native standalone GUI window directly onto your local machine.
 
 ---
 
@@ -37,4 +44,4 @@ npm run package:desktop
 2. Downloads the Electron builder modules.
 3. Automatically triggers `electron-builder` to package your app into a redistributable setup format.
 
-Once the automated packing finishes, look inside the **`/desktop/release/`** folder. You will find your final, installable `.exe` setup file completely ready for deployment!
+Once the automated packing finishes, look inside the **`/desktop/release/`** folder. You will find your final, installable `.exe` or `.dmg` setup file completely ready for deployment!

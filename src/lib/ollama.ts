@@ -145,19 +145,40 @@ export async function chat(
     headers['Authorization'] = `Bearer ${apiKeys.ollama}`;
   }
 
-  const res = await fetch(`${baseUrl}/api/chat`, {
+  const reqBody: any = {
+    model,
+    messages,
+    stream: !!onChunk
+  };
+
+  if (numCtx && numCtx > 0) {
+    reqBody.options = { num_ctx: numCtx };
+  }
+
+  let res = await fetch(`${baseUrl}/api/chat`, {
     method: 'POST',
     headers,
-    body: JSON.stringify({
-      model,
-      messages,
-      stream: !!onChunk,
-      options: {
-        num_ctx: numCtx || 32768
-      }
-    }),
+    body: JSON.stringify(reqBody),
     signal,
   });
+
+  // Auto-fallback for Cloud Models or Out-Of-Memory scenarios returning 500 Internal Server Error
+  if (res.status === 500 && numCtx && numCtx > 0) {
+    console.warn("Ollama returned 500 Internal Server Error. Retrying without custom num_ctx (likely a Cloud Model or Out of Memory).");
+    const fallbackBody = { ...reqBody };
+    if (fallbackBody.options) {
+      delete fallbackBody.options.num_ctx;
+      if (Object.keys(fallbackBody.options).length === 0) {
+        delete fallbackBody.options;
+      }
+    }
+    res = await fetch(`${baseUrl}/api/chat`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(fallbackBody),
+      signal,
+    });
+  }
 
   if (!res.ok) {
     if (res.status === 404) throw new Error('Ollama API endpoint not found (404). Is Ollama running?');
