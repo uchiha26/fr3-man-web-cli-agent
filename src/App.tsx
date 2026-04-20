@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Terminal } from './components/Terminal';
 import { FileExplorer } from './components/FileExplorer';
 import { Checklist, Task } from './components/Checklist';
@@ -32,6 +32,7 @@ export default function App() {
   const [enableReviewer, setEnableReviewer] = useState(false);
   const [enablePromptArchitect, setEnablePromptArchitect] = useState(false);
   const [promptArchitectMaxWords, setPromptArchitectMaxWords] = useState(200);
+  const [ollamaContextLength, setOllamaContextLength] = useState(32768);
   const [enableSecurityAuditor, setEnableSecurityAuditor] = useState(false);
   const [enableToolVerifier, setEnableToolVerifier] = useState(false);
   const [enableBoardOfAgents, setEnableBoardOfAgents] = useState(false);
@@ -48,6 +49,17 @@ export default function App() {
   const [showChecklist, setShowChecklist] = useState(true);
   const [prefilledInput, setPrefilledInput] = useState('');
   const [fileRefreshTrigger, setFileRefreshTrigger] = useState(0);
+
+  // Stop generation ref
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const handleStopGeneration = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      setIsLoading(false);
+      setMessages(prev => [...prev, { role: 'system', content: '🛑 Generation manually stopped.' }]);
+    }
+  };
 
   // Confirmation modal state
   const [confirmDialog, setConfirmDialog] = useState<{ message: string, resolve: (value: boolean) => void } | null>(null);
@@ -138,6 +150,7 @@ export default function App() {
     const settings = {
       apiKeys,
       baseUrl,
+      ollamaContextLength,
       personality,
       enableThinking,
       enableInternet,
@@ -175,6 +188,7 @@ export default function App() {
           const settings = JSON.parse(event.target?.result as string);
           if (settings.apiKeys !== undefined) setApiKeys(settings.apiKeys);
           if (settings.baseUrl !== undefined) setBaseUrl(settings.baseUrl);
+          if (settings.ollamaContextLength !== undefined) setOllamaContextLength(settings.ollamaContextLength);
           if (settings.personality !== undefined) setPersonality(settings.personality);
           if (settings.enableThinking !== undefined) setEnableThinking(settings.enableThinking);
           if (settings.enableInternet !== undefined) setEnableInternet(settings.enableInternet);
@@ -236,6 +250,9 @@ export default function App() {
       const currentModelObj = models.find(m => m.name === selectedModel);
       const provider = currentModelObj?.provider || 'ollama';
 
+      abortControllerRef.current = new AbortController();
+      const signal = abortControllerRef.current.signal;
+
       // Capture active sub-agents for this run
       let runArchitect = enablePromptArchitect && !enableBoardOfAgents;
       let runReviewer = enableReviewer && !enableBoardOfAgents;
@@ -266,7 +283,7 @@ You must reply ONLY with a valid JSON object matching this exact schema:
 If no agents are needed, return an empty array for selected_agents.`;
         
         try {
-          const boaResponse = await chat(baseUrl, selectedModel, [{role: 'system', content: boaPrompt}], undefined, provider, apiKeys);
+          const boaResponse = await chat(baseUrl, selectedModel, [{role: 'system', content: boaPrompt}], undefined, provider, apiKeys, signal);
           
           // Extract JSON robustly
           let jsonStr = boaResponse;
@@ -292,7 +309,8 @@ If no agents are needed, return an empty array for selected_agents.`;
           } else {
             setMessages(prev => [...prev, { role: 'system', content: `🏛️ Board decided no sub-agents are needed for this task.` }]);
           }
-        } catch(e) {
+        } catch(e: any) {
+          if (e.name === 'AbortError') throw e;
           console.warn("BOA JSON parse failed, bypassing Board delegation.", e);
           setMessages(prev => prev.filter(m => !m.content.includes('Board of Agents is analyzing')));
         }
@@ -301,12 +319,11 @@ If no agents are needed, return an empty array for selected_agents.`;
       // Phase 1: Prompt Architect
       if (runArchitect && finalContent.trim().length > 0) {
         setMessages(prev => [...prev, { role: 'system', content: 'Prompt Architect is enhancing your request...' }]);
-        const architectPrompt = `You are an expert AI Prompt Engineer...`; // Truncated original, restoring next line
         const fullArchitectPrompt = `You are an expert AI Prompt Engineer. The user wants to ask a coding agent to do the following: "${finalContent}". 
 Rewrite this request into a highly detailed, professional prompt. Include best practices, potential edge cases to watch out for, and clear step-by-step instructions. 
 CRITICAL: Do NOT exceed ${promptArchitectMaxWords} words in your final output so the agent doesn't get overwhelmed. Output ONLY the enhanced prompt, nothing else.`;
         
-        const enhancedInput = await chat(baseUrl, selectedModel, [{ role: 'user', content: fullArchitectPrompt }], undefined, provider, apiKeys);
+        const enhancedInput = await chat(baseUrl, selectedModel, [{ role: 'user', content: fullArchitectPrompt }], undefined, provider, apiKeys, signal, ollamaContextLength);
         
         setMessages(prev => prev.filter(m => m.content !== 'Prompt Architect is enhancing your request...'));
         const enhancedMsg: ChatMessage = { role: 'system', content: `**Prompt Architect Enhanced Request:**\n\n${enhancedInput}` };
@@ -316,21 +333,29 @@ CRITICAL: Do NOT exceed ${promptArchitectMaxWords} words in your final output so
 
       // Phase 2: Main Agent Loop
       const runFlags = { runReviewer, runSecurity, runVerifier, runQA, runCommiter };
-      await runAgentLoop(currentMessages, runFlags, provider);
+      await runAgentLoop(currentMessages, runFlags, provider as any, signal, ollamaContextLength);
     } catch (e: any) {
-      setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${e.message}` }]);
+      if (e.name === 'AbortError') {
+         console.log('Main loop aborted by user');
+         // We handle UI feedback in handleStopGeneration
+      } else {
+         setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${e.message}` }]);
+      }
     } finally {
       setIsLoading(false);
+      abortControllerRef.current = null;
     }
   };
 
-  const runAgentLoop = async (currentMessages: ChatMessage[], runFlags: { runReviewer: boolean, runSecurity: boolean, runVerifier: boolean, runQA: boolean, runCommiter: boolean }, provider: string) => {
+  const runAgentLoop = async (currentMessages: ChatMessage[], runFlags: { runReviewer: boolean, runSecurity: boolean, runVerifier: boolean, runQA: boolean, runCommiter: boolean }, provider: 'ollama' | 'openai' | 'anthropic' | 'gemini' | 'deepseek' | 'lmstudio', signal: AbortSignal, ollamaContextLength: number) => {
     let loopMessages = [...currentMessages];
     let toolCallCount = 0;
     const MAX_TOOL_CALLS = 10; // Prevent infinite loops
     let filesModified = false;
     
     while (toolCallCount < MAX_TOOL_CALLS) {
+      if (signal.aborted) throw new Error('AbortError');
+      
       // Add a temporary assistant message for streaming
       setMessages([...loopMessages, { role: 'assistant', content: '' }]);
       
@@ -338,7 +363,7 @@ CRITICAL: Do NOT exceed ${promptArchitectMaxWords} words in your final output so
       await chat(baseUrl, selectedModel, loopMessages, (chunk) => {
         assistantContent += chunk;
         setMessages([...loopMessages, { role: 'assistant', content: assistantContent }]);
-      }, provider, apiKeys);
+      }, provider, apiKeys, signal, ollamaContextLength);
 
       loopMessages.push({ role: 'assistant', content: assistantContent });
       setMessages([...loopMessages]);
@@ -346,6 +371,8 @@ CRITICAL: Do NOT exceed ${promptArchitectMaxWords} words in your final output so
       if (dirHandle) {
         saveMemory(dirHandle, loopMessages);
       }
+
+      if (signal.aborted) throw new Error('AbortError');
 
       const toolCall = parseToolCall(assistantContent);
       if (toolCall) {
@@ -391,7 +418,7 @@ If everything looks secure, performant, and correct, reply ONLY with the exact w
 If there are issues, explain them clearly so the agent can fix them. Do not write the code yourself, just point out the flaws.`;
           
           const reviewerMessages = [...loopMessages, { role: 'user', content: reviewerPrompt } as ChatMessage];
-          const reviewerResponse = await chat(baseUrl, selectedModel, reviewerMessages, undefined, provider, apiKeys);
+          const reviewerResponse = await chat(baseUrl, selectedModel, reviewerMessages, undefined, provider, apiKeys, signal, ollamaContextLength);
           
           setMessages(prev => prev.filter(m => m.content !== 'Senior Reviewer is analyzing the changes...'));
           
@@ -417,7 +444,7 @@ If the code is completely secure, reply ONLY with the exact word "SECURE".
 If vulnerabilities exist, explain them clearly so the agent can fix them.`;
           
           const securityMessages = [...loopMessages, { role: 'user', content: securityPrompt } as ChatMessage];
-          const securityResponse = await chat(baseUrl, selectedModel, securityMessages, undefined, provider, apiKeys);
+          const securityResponse = await chat(baseUrl, selectedModel, securityMessages, undefined, provider, apiKeys, signal, ollamaContextLength);
           
           setMessages(prev => prev.filter(m => m.content !== 'Security Auditor is scanning for vulnerabilities...'));
           
@@ -443,7 +470,7 @@ If tool usage is optimal and correct, reply ONLY with the exact word "OPTIMAL".
 If the tools were used inefficiently, used dangerously, or hallucinated, explain the flaws strictly so the agent can learn and fix them using better tool selections.`;
           
           const verifierMessages = [...loopMessages, { role: 'user', content: verifierPrompt } as ChatMessage];
-          const verifierResponse = await chat(baseUrl, selectedModel, verifierMessages, undefined, provider, apiKeys);
+          const verifierResponse = await chat(baseUrl, selectedModel, verifierMessages, undefined, provider, apiKeys, signal, ollamaContextLength);
           
           setMessages(prev => prev.filter(m => m.content !== 'Tool Inspector is verifying correct API usage...'));
           
@@ -476,7 +503,7 @@ Write automated unit tests (.test.js or .test.tsx) for the new or modified logic
           if (enableSmartPackager && filesModified) {
             try {
               const packagerPrompt = `Review the code changes made. Are there any new third-party npm packages imported that might need installation? Reply ONLY with space-separated package names, or "NONE" if dependencies are standard or already exist.`;
-              const pkgResponse = await chat(baseUrl, selectedModel, [...loopMessages, { role: 'user', content: packagerPrompt }], undefined, provider, apiKeys);
+              const pkgResponse = await chat(baseUrl, selectedModel, [...loopMessages, { role: 'user', content: packagerPrompt }], undefined, provider, apiKeys, signal, ollamaContextLength);
               const pkgs = pkgResponse.trim();
               if (pkgs !== 'NONE' && pkgs.length > 0 && !pkgs.includes(' ')) { // Basic sanity check
                  setMessages(prev => [...prev, { role: 'system', content: `📦 Smart Packager detected missing imports. You may need to run:\n\n\`npm install ${pkgs}\`` }]);
@@ -489,7 +516,7 @@ Write automated unit tests (.test.js or .test.tsx) for the new or modified logic
           if (runFlags.runCommiter && filesModified) {
             try {
               const commiterPrompt = `Write a clean, concise 'git commit -m' message summarizing the changes just made in this session. Reply ONLY with the git command.`;
-              const commitResponse = await chat(baseUrl, selectedModel, [...loopMessages, { role: 'user', content: commiterPrompt }], undefined, provider, apiKeys);
+              const commitResponse = await chat(baseUrl, selectedModel, [...loopMessages, { role: 'user', content: commiterPrompt }], undefined, provider, apiKeys, signal, ollamaContextLength);
               setMessages(prev => [...prev, { role: 'system', content: `📝 Auto-Commiter suggests:\n\n\`${commitResponse.trim()}\`` }]);
             } catch (e) {
               // Ignore commiter failure
@@ -650,7 +677,30 @@ Write automated unit tests (.test.js or .test.tsx) for the new or modified logic
                 </div>
 
                 <div className="space-y-2 pt-2">
-                  <label className="block text-sm font-medium text-gray-300">LM Studio API URL</label>
+                  <label className="block text-sm font-medium text-gray-300">Ollama Auth Token (Optional)</label>
+                  <input 
+                    type="password" 
+                    value={apiKeys.ollama || ''}
+                    onChange={(e) => setApiKeys(prev => ({ ...prev, ollama: e.target.value }))}
+                    placeholder="Bearer token if hosted remote"
+                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-green-500"
+                  />
+                </div>
+
+                <div className="space-y-2 pt-2">
+                  <label className="block text-sm font-medium text-gray-300">Ollama Context Length (num_ctx)</label>
+                  <input 
+                    type="number" 
+                    value={ollamaContextLength}
+                    onChange={(e) => setOllamaContextLength(Number(e.target.value))}
+                    placeholder="32768"
+                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-green-500"
+                  />
+                  <p className="text-xs text-gray-500">Default to 32768. Reduce if you run out of VRAM/RAM.</p>
+                </div>
+
+                <div className="space-y-2 pt-2 border-t border-gray-800">
+                  <label className="block text-sm font-medium text-gray-300 mt-2">LM Studio API URL</label>
                   <input 
                     type="text" 
                     value={apiKeys.lmstudioUrl || ''}
@@ -990,6 +1040,7 @@ Write automated unit tests (.test.js or .test.tsx) for the new or modified logic
             messages={messages} 
             onSendMessage={handleSendMessage} 
             isLoading={isLoading}
+            onStopGeneration={handleStopGeneration}
             projectName={dirHandle?.name || null}
             onSelectProject={handleSelectProject}
             prefilledInput={prefilledInput}

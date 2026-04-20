@@ -14,13 +14,17 @@ export interface ChatMessage {
 
 export async function getModels(
   baseUrl = 'http://localhost:11434',
-  apiKeys?: { openai?: string, anthropic?: string, gemini?: string, deepseek?: string, lmstudioUrl?: string }
+  apiKeys?: { openai?: string, anthropic?: string, gemini?: string, deepseek?: string, lmstudioUrl?: string, ollama?: string }
 ): Promise<OllamaModel[]> {
   let models: OllamaModel[] = [];
   
   // Fetch Ollama models
   try {
-    const res = await fetch(`${baseUrl}/api/tags`);
+    const headers: Record<string, string> = {};
+    if (apiKeys?.ollama) {
+      headers['Authorization'] = `Bearer ${apiKeys.ollama}`;
+    }
+    const res = await fetch(`${baseUrl}/api/tags`, { headers });
     if (res.ok) {
       const data = await res.json();
       const ollamaModels = data.models.map((m: any) => ({
@@ -123,25 +127,36 @@ export async function chat(
   messages: ChatMessage[],
   onChunk?: (chunk: string) => void,
   provider: 'ollama' | 'openai' | 'anthropic' | 'gemini' | 'deepseek' | 'lmstudio' = 'ollama',
-  apiKeys?: { openai?: string, anthropic?: string, gemini?: string, deepseek?: string, lmstudioUrl?: string }
+  apiKeys?: { openai?: string, anthropic?: string, gemini?: string, deepseek?: string, lmstudioUrl?: string, ollama?: string },
+  signal?: AbortSignal,
+  numCtx?: number
 ): Promise<string> {
   if (provider === 'openai' || provider === 'deepseek' || provider === 'lmstudio') {
-    return chatOpenAICompatible(provider, model, messages, onChunk, apiKeys);
+    return chatOpenAICompatible(provider, model, messages, onChunk, apiKeys, signal);
   } else if (provider === 'gemini') {
-    return chatGemini(model, messages, onChunk, apiKeys?.gemini);
+    return chatGemini(model, messages, onChunk, apiKeys?.gemini, signal);
   } else if (provider === 'anthropic') {
-    return chatAnthropic(model, messages, onChunk, apiKeys?.anthropic);
+    return chatAnthropic(model, messages, onChunk, apiKeys?.anthropic, signal);
   }
 
   // Default Ollama implementation
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (apiKeys?.ollama) {
+    headers['Authorization'] = `Bearer ${apiKeys.ollama}`;
+  }
+
   const res = await fetch(`${baseUrl}/api/chat`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({
       model,
       messages,
       stream: !!onChunk,
+      options: {
+        num_ctx: numCtx || 32768
+      }
     }),
+    signal,
   });
 
   if (!res.ok) {
@@ -194,7 +209,8 @@ async function chatOpenAICompatible(
   model: string,
   messages: ChatMessage[],
   onChunk?: (chunk: string) => void,
-  apiKeys?: { openai?: string, deepseek?: string, lmstudioUrl?: string }
+  apiKeys?: { openai?: string, deepseek?: string, lmstudioUrl?: string },
+  signal?: AbortSignal
 ): Promise<string> {
   let apiKey = provider === 'openai' ? apiKeys?.openai : apiKeys?.deepseek;
   if (provider === 'lmstudio') apiKey = 'lm-studio'; // LM Studio doesn't strictly require one, but 'lm-studio' is fine standard
@@ -210,10 +226,7 @@ async function chatOpenAICompatible(
 
   // Convert messages to OpenAI format (strip images for now to keep it simple, or format them if needed)
   const formattedMessages = messages.map(m => {
-    // OpenAI/DeepSeek API expects 'user', 'assistant', 'system', or 'tool'
-    // But if we send 'tool', it expects a tool_call_id which we aren't tracking properly yet in this simple implementation.
-    // For now, let's map 'tool' role to 'user' or 'system' to avoid validation errors, 
-    // or format it so the model understands it's a tool result.
+    // ... rest inside remains exactly the same logic
     let role = m.role;
     let content = m.content;
 
@@ -244,7 +257,8 @@ async function chatOpenAICompatible(
       model,
       messages: formattedMessages,
       stream: !!onChunk
-    })
+    }),
+    signal
   });
 
   if (!res.ok) {
@@ -292,7 +306,8 @@ async function chatAnthropic(
   model: string,
   messages: ChatMessage[],
   onChunk?: (chunk: string) => void,
-  apiKey?: string
+  apiKey?: string,
+  signal?: AbortSignal
 ): Promise<string> {
   if (!apiKey) throw new Error('Missing Anthropic API key');
 
@@ -333,7 +348,8 @@ async function chatAnthropic(
       messages: userMsgs,
       max_tokens: 4096,
       stream: !!onChunk
-    })
+    }),
+    signal
   });
 
   if (!res.ok) {
@@ -379,7 +395,8 @@ async function chatGemini(
   model: string,
   messages: ChatMessage[],
   onChunk?: (chunk: string) => void,
-  apiKey?: string
+  apiKey?: string,
+  signal?: AbortSignal
 ): Promise<string> {
   if (!apiKey) throw new Error('Missing Gemini API key');
 
@@ -411,15 +428,16 @@ async function chatGemini(
     body.systemInstruction = { parts: [{ text: systemInstruction }] };
   }
 
-  const endpoint = onChunk 
-    ? `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}`
-    : `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body)
-  });
+    const endpoint = onChunk 
+      ? `https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${apiKey}`
+      : `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal
+    });
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));

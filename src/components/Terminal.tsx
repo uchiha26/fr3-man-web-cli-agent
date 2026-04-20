@@ -29,13 +29,14 @@ interface TerminalProps {
   messages: ChatMessage[];
   onSendMessage: (content: string, attachments: Attachment[]) => void;
   isLoading: boolean;
+  onStopGeneration?: () => void;
   projectName: string | null;
   onSelectProject: () => void;
   prefilledInput?: string;
   onClearPrefilled?: () => void;
 }
 
-export function Terminal({ messages, onSendMessage, isLoading, projectName, onSelectProject, prefilledInput, onClearPrefilled }: TerminalProps) {
+export function Terminal({ messages, onSendMessage, isLoading, onStopGeneration, projectName, onSelectProject, prefilledInput, onClearPrefilled }: TerminalProps) {
   const [input, setInput] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [greeting, setGreeting] = useState('');
@@ -411,18 +412,28 @@ export function Terminal({ messages, onSendMessage, isLoading, projectName, onSe
                 }
               }}
               placeholder="Message Fr3 Man..."
-              disabled={isLoading}
               rows={1}
               className="flex-1 max-h-48 bg-transparent border-none text-gray-100 px-2 py-2.5 focus:outline-none resize-none disabled:opacity-50 text-[15px]"
               style={{ minHeight: '44px' }}
             />
-            <button
-              type="submit"
-              disabled={(!input.trim() && attachments.length === 0) || isLoading}
-              className="p-2 bg-white text-black rounded-xl disabled:opacity-50 disabled:bg-[#3f3f3f] disabled:text-gray-500 transition-colors"
-            >
-              <Send className="w-5 h-5" />
-            </button>
+            {isLoading ? (
+              <button
+                type="button"
+                onClick={onStopGeneration}
+                className="p-2 bg-red-600 hover:bg-red-500 text-white rounded-xl transition-colors flex items-center justify-center p-[10px]"
+                title="Stop generation"
+              >
+                <div className="w-[14px] h-[14px] bg-white rounded-sm" />
+              </button>
+            ) : (
+              <button
+                type="submit"
+                disabled={(!input.trim() && attachments.length === 0)}
+                className="p-2 bg-white text-black rounded-xl disabled:opacity-50 disabled:bg-[#3f3f3f] disabled:text-gray-500 transition-colors"
+              >
+                <Send className="w-5 h-5" />
+              </button>
+            )}
           </form>
           <div className="text-center mt-2 text-xs text-gray-500">
             Fr3 Man can make mistakes. Check important changes.
