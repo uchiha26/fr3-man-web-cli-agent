@@ -24,7 +24,7 @@ npm run start:desktop
 
 ---
 
-## 🚀 Misiunea 2 / Mission 2: How to Export an Installable `.exe` File
+## 🚀 Mission 2: How to Export an Installable `.exe` File
 
 To generate a Windows Setup executable (NSIS format) that you can freely distribute, share with friends, or publish online, open a terminal in the **MAIN ROOT FOLDER** of the project and run:
 

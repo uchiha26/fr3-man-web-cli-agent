@@ -5,7 +5,12 @@ Welcome to the main repository for the **Fr3 Man** project. This root directory 
 ## 🌐 Browser Version Instructions (Web App)
 
 ### Development Mode
-To start the local development server (useful for editing frontend interface components):
+
+**Windows Quick Start:**
+The easiest way to start the browser version on Windows is to simply double-click the **`run.bat`** file located in this root directory. It will automatically handle everything and start the server for you.
+
+**Manual Terminal Start:**
+To start the local development server manually (useful for editing frontend interface components):
 1. Open your terminal in this root directory.
 2. Install all standard web dependencies:
    ```bash
