@@ -3,7 +3,7 @@ export interface OllamaModel {
   modified_at: string;
   size: number;
   vision?: boolean;
-  provider?: 'ollama' | 'openai' | 'anthropic' | 'gemini' | 'deepseek';
+  provider?: 'ollama' | 'openai' | 'anthropic' | 'gemini' | 'deepseek' | 'lmstudio';
 }
 
 export interface ChatMessage {
@@ -14,7 +14,7 @@ export interface ChatMessage {
 
 export async function getModels(
   baseUrl = 'http://localhost:11434',
-  apiKeys?: { openai?: string, anthropic?: string, gemini?: string, deepseek?: string }
+  apiKeys?: { openai?: string, anthropic?: string, gemini?: string, deepseek?: string, lmstudioUrl?: string }
 ): Promise<OllamaModel[]> {
   let models: OllamaModel[] = [];
   
@@ -37,6 +37,26 @@ export async function getModels(
     }
   } catch (err) {
     console.error('Error fetching Ollama models:', err);
+  }
+
+  // Fetch LM Studio models
+  if (apiKeys?.lmstudioUrl) {
+    try {
+      const res = await fetch(`${apiKeys.lmstudioUrl}/models`);
+      if (res.ok) {
+        const data = await res.json();
+        const lmModels = data.data.map((m: any) => ({
+          name: m.id,
+          modified_at: new Date().toISOString(),
+          size: 0,
+          vision: false, 
+          provider: 'lmstudio'
+        }));
+        models = [...models, ...lmModels];
+      }
+    } catch (err) {
+      console.error('Error fetching LM Studio models:', err);
+    }
   }
 
   // Inject Cloud Models if keys are present
@@ -102,10 +122,10 @@ export async function chat(
   model: string,
   messages: ChatMessage[],
   onChunk?: (chunk: string) => void,
-  provider: 'ollama' | 'openai' | 'anthropic' | 'gemini' | 'deepseek' = 'ollama',
-  apiKeys?: { openai?: string, anthropic?: string, gemini?: string, deepseek?: string }
+  provider: 'ollama' | 'openai' | 'anthropic' | 'gemini' | 'deepseek' | 'lmstudio' = 'ollama',
+  apiKeys?: { openai?: string, anthropic?: string, gemini?: string, deepseek?: string, lmstudioUrl?: string }
 ): Promise<string> {
-  if (provider === 'openai' || provider === 'deepseek') {
+  if (provider === 'openai' || provider === 'deepseek' || provider === 'lmstudio') {
     return chatOpenAICompatible(provider, model, messages, onChunk, apiKeys);
   } else if (provider === 'gemini') {
     return chatGemini(model, messages, onChunk, apiKeys?.gemini);
@@ -170,18 +190,23 @@ export async function chat(
 // --- Cloud API Handlers ---
 
 async function chatOpenAICompatible(
-  provider: 'openai' | 'deepseek',
+  provider: 'openai' | 'deepseek' | 'lmstudio',
   model: string,
   messages: ChatMessage[],
   onChunk?: (chunk: string) => void,
-  apiKeys?: { openai?: string, deepseek?: string }
+  apiKeys?: { openai?: string, deepseek?: string, lmstudioUrl?: string }
 ): Promise<string> {
-  const apiKey = provider === 'openai' ? apiKeys?.openai : apiKeys?.deepseek;
-  if (!apiKey) throw new Error(`Missing API key for ${provider}`);
+  let apiKey = provider === 'openai' ? apiKeys?.openai : apiKeys?.deepseek;
+  if (provider === 'lmstudio') apiKey = 'lm-studio'; // LM Studio doesn't strictly require one, but 'lm-studio' is fine standard
+  
+  if (!apiKey && provider !== 'lmstudio') throw new Error(`Missing API key for ${provider}`);
 
-  const endpoint = provider === 'openai' 
-    ? 'https://api.openai.com/v1/chat/completions'
-    : 'https://api.deepseek.com/chat/completions';
+  let endpoint = 'https://api.openai.com/v1/chat/completions';
+  if (provider === 'deepseek') endpoint = 'https://api.deepseek.com/chat/completions';
+  if (provider === 'lmstudio') {
+    if (!apiKeys?.lmstudioUrl) throw new Error("Missing LM Studio URL");
+    endpoint = `${apiKeys.lmstudioUrl}/chat/completions`;
+  }
 
   // Convert messages to OpenAI format (strip images for now to keep it simple, or format them if needed)
   const formattedMessages = messages.map(m => {

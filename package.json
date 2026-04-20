@@ -5,7 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",
-    "build": "vite build",
+    "build": "vite build && node -e \"const AdmZip = require('adm-zip'); const zip = new AdmZip(); zip.addLocalFolder('dist', 'dist'); zip.writeZip('dist.zip');\"",
+    "build:desktop": "vite build && node -e \"require('fs').cpSync('dist', 'desktop/dist', {recursive: true, force: true})\"",
+    "start:desktop": "npm run build:desktop && cd desktop && npm install && npm start",
+    "package:desktop": "npm run build:desktop && cd desktop && npm install && npm run dist",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit"
@@ -38,6 +41,7 @@
     "@types/node": "^22.14.0",
     "@types/turndown": "^5.0.6",
     "@types/wicg-file-system-access": "^2023.10.7",
+    "adm-zip": "^0.5.17",
     "autoprefixer": "^10.4.21",
     "tailwindcss": "^4.1.14",
     "tsx": "^4.21.0",

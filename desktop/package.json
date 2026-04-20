@@ -1,0 +1,36 @@
+{
+  "name": "fr3man-desktop",
+  "version": "1.0.0",
+  "description": "Fr3 Man Desktop Agent (Electron)",
+  "author": "Andrey Petronel",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "dependencies": {
+    "puppeteer-core": "^22.0.0" 
+  },
+  "devDependencies": {
+    "electron": "^29.1.5",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.fr3man.desktop",
+    "productName": "Fr3 Man Agent",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "fallback.html",
+      "package.json",
+      "dist/**/*"
+    ],
+    "win": {
+      "target": "nsis"
+    }
+  }
+}

@@ -6,7 +6,7 @@ import { getModels, OllamaModel, ChatMessage, chat } from './lib/ollama';
 import { getSystemPrompt, parseToolCall, executeTool, ALL_TOOLS } from './lib/agent';
 import { verifyPermission, readFile, writeFile } from './lib/fs';
 import { get, set } from 'idb-keyval';
-import { Settings, X, AlertTriangle, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Heart, CreditCard } from 'lucide-react';
+import { Settings, X, AlertTriangle, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Heart, CreditCard, Download, Upload } from 'lucide-react';
 
 const MEMORY_FILE = '.agent-memory.json';
 
@@ -19,9 +19,9 @@ export default function App() {
   const [baseUrl, setBaseUrl] = useState('http://localhost:11434');
   
   // API Keys state
-  const [apiKeys, setApiKeys] = useState<{ openai?: string, anthropic?: string, gemini?: string, deepseek?: string }>(() => {
+  const [apiKeys, setApiKeys] = useState<{ openai?: string, anthropic?: string, gemini?: string, deepseek?: string, lmstudioUrl?: string }>(() => {
     const saved = localStorage.getItem('agentApiKeys');
-    return saved ? JSON.parse(saved) : {};
+    return saved ? JSON.parse(saved) : { lmstudioUrl: 'http://localhost:1234/v1' };
   });
   
   // Settings state
@@ -132,6 +132,71 @@ export default function App() {
     } catch (e) {
       console.error("User cancelled directory picker", e);
     }
+  };
+
+  const exportSettings = () => {
+    const settings = {
+      apiKeys,
+      baseUrl,
+      personality,
+      enableThinking,
+      enableInternet,
+      enableReviewer,
+      enablePromptArchitect,
+      promptArchitectMaxWords,
+      enableSecurityAuditor,
+      enableToolVerifier,
+      enableBoardOfAgents,
+      enableAutoTests,
+      enableAutoHealer,
+      enableSmartPackager,
+      enableAutoCommiter,
+      customInstructions
+    };
+    const blob = new Blob([JSON.stringify(settings, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'fr3man_settings.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importSettings = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'application/json';
+    input.onchange = (e: any) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const settings = JSON.parse(event.target?.result as string);
+          if (settings.apiKeys !== undefined) setApiKeys(settings.apiKeys);
+          if (settings.baseUrl !== undefined) setBaseUrl(settings.baseUrl);
+          if (settings.personality !== undefined) setPersonality(settings.personality);
+          if (settings.enableThinking !== undefined) setEnableThinking(settings.enableThinking);
+          if (settings.enableInternet !== undefined) setEnableInternet(settings.enableInternet);
+          if (settings.enableReviewer !== undefined) setEnableReviewer(settings.enableReviewer);
+          if (settings.enablePromptArchitect !== undefined) setEnablePromptArchitect(settings.enablePromptArchitect);
+          if (settings.promptArchitectMaxWords !== undefined) setPromptArchitectMaxWords(settings.promptArchitectMaxWords);
+          if (settings.enableSecurityAuditor !== undefined) setEnableSecurityAuditor(settings.enableSecurityAuditor);
+          if (settings.enableToolVerifier !== undefined) setEnableToolVerifier(settings.enableToolVerifier);
+          if (settings.enableBoardOfAgents !== undefined) setEnableBoardOfAgents(settings.enableBoardOfAgents);
+          if (settings.enableAutoTests !== undefined) setEnableAutoTests(settings.enableAutoTests);
+          if (settings.enableAutoHealer !== undefined) setEnableAutoHealer(settings.enableAutoHealer);
+          if (settings.enableSmartPackager !== undefined) setEnableSmartPackager(settings.enableSmartPackager);
+          if (settings.enableAutoCommiter !== undefined) setEnableAutoCommiter(settings.enableAutoCommiter);
+          if (settings.customInstructions !== undefined) setCustomInstructions(settings.customInstructions);
+          alert("Settings imported successfully!");
+        } catch (err) {
+          alert("Invalid settings file!");
+        }
+      };
+      reader.readAsText(file);
+    };
+    input.click();
   };
 
   const handleSendMessage = async (content: string, attachments: any[]) => {
@@ -571,16 +636,30 @@ Write automated unit tests (.test.js or .test.tsx) for the new or modified logic
             </div>
             
             <div className="p-6 space-y-6 overflow-y-auto custom-scrollbar">
-              {/* Ollama URL */}
-              <div className="space-y-2">
-                <label className="block text-sm font-medium text-gray-300">Ollama API URL</label>
-                <input 
-                  type="text" 
-                  value={baseUrl}
-                  onChange={(e) => setBaseUrl(e.target.value)}
-                  className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-green-500"
-                />
-                <p className="text-xs text-gray-500">Ensure Ollama is running with OLLAMA_ORIGINS="*"</p>
+              <div className="space-y-4">
+                {/* Local API URLs */}
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium text-gray-300">Ollama API URL</label>
+                  <input 
+                    type="text" 
+                    value={baseUrl}
+                    onChange={(e) => setBaseUrl(e.target.value)}
+                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-green-500"
+                  />
+                  <p className="text-xs text-gray-500">Ensure Ollama is running with OLLAMA_ORIGINS="*"</p>
+                </div>
+
+                <div className="space-y-2 pt-2">
+                  <label className="block text-sm font-medium text-gray-300">LM Studio API URL</label>
+                  <input 
+                    type="text" 
+                    value={apiKeys.lmstudioUrl || ''}
+                    onChange={(e) => setApiKeys(prev => ({ ...prev, lmstudioUrl: e.target.value }))}
+                    placeholder="http://localhost:1234/v1"
+                    className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-green-500"
+                  />
+                  <p className="text-xs text-gray-500">Make sure local server is turned ON in LM Studio.</p>
+                </div>
               </div>
 
               {/* Cloud API Keys */}
@@ -852,25 +931,42 @@ Write automated unit tests (.test.js or .test.tsx) for the new or modified logic
                 <div className="flex justify-between items-center">
                   <label className="block text-sm font-medium text-gray-300">Custom Instructions (Fr3 Man's Brain)</label>
                   <button 
-                    onClick={() => setCustomInstructions("Reguli pentru PHP:\n- Folosește PHP 8+ cu strict_types=1.\n- Folosește PDO pentru interacțiunea cu baza de date, niciodată mysqli.\n- Securitate: previno SQL Injection (prepared statements) și XSS (htmlspecialchars).\n- Folosește un stil de cod curat (PSR-12).\n- Răspunde în limba română.")}
+                    onClick={() => setCustomInstructions("1. Tool Efficiency: ALWAYS prioritize 'edit_file_by_lines' or 'insert_code' for small updates. Save 'write_file' ONLY for creating entirely new files.\n2. Context First: Use 'read_file_with_lines' before any modification to ensure you target the precise lines.\n3. Brevity & Execution: Do not babble or use filler words. Go straight to the point and execute the tools immediately.\n4. Syntax Verification: Check syntax using 'check_syntax_integrity' if making complex logic modifications.\n5. Batching: Use 'write_batch_files' if scaffolding multiple files simultaneously to save operations.")}
                     className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 px-2 py-1 rounded border border-gray-700 transition-colors"
                   >
-                    Load PHP Preset
+                    Load General Rules
                   </button>
                 </div>
                 <textarea 
                   value={customInstructions}
                   onChange={(e) => setCustomInstructions(e.target.value)}
-                  placeholder="e.g., Always use Tailwind CSS. Never use var, only let/const. Be extremely polite."
-                  className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-green-500 h-24 resize-none"
+                  placeholder="e.g., Always use Tailwind CSS. Never rewrite the whole file for small edits. Provide direct, concise answers without fluff..."
+                  className="w-full bg-gray-900 border border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-green-500 h-32 resize-none"
                 />
               </div>
             </div>
             
-            <div className="px-4 py-3 border-t border-gray-800 bg-[#1a1a1a] flex justify-end">
+            <div className="px-4 py-3 border-t border-gray-800 bg-[#1a1a1a] flex justify-between items-center">
+              <div className="flex gap-2">
+                <button 
+                  onClick={importSettings}
+                  className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded text-sm transition-colors border border-gray-700"
+                  title="Import Settings"
+                >
+                  <Upload className="w-4 h-4" /> Import
+                </button>
+                <button 
+                  onClick={exportSettings}
+                  className="flex items-center gap-2 bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded text-sm transition-colors border border-gray-700"
+                  title="Export Settings"
+                >
+                  <Download className="w-4 h-4" /> Export
+                </button>
+              </div>
+
               <button 
                 onClick={() => setShowSettings(false)}
-                className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded text-sm transition-colors"
+                className="bg-green-600 hover:bg-green-500 text-white px-6 py-2 rounded font-medium text-sm transition-colors"
               >
                 Done
               </button>
