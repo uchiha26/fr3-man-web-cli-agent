@@ -3,11 +3,15 @@ export async function verifyPermission(fileHandle: FileSystemHandle, readWrite: 
   if (readWrite) {
     options.mode = 'readwrite';
   }
-  if ((await fileHandle.queryPermission(options)) === 'granted') {
-    return true;
-  }
-  if ((await fileHandle.requestPermission(options)) === 'granted') {
-    return true;
+  try {
+    if ((await fileHandle.queryPermission(options)) === 'granted') {
+      return true;
+    }
+    if ((await fileHandle.requestPermission(options)) === 'granted') {
+      return true;
+    }
+  } catch (err) {
+    console.warn("Permission request failed:", err);
   }
   return false;
 }

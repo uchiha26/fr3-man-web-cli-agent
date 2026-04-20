@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, session } = require('electron');
 const path = require('path');
 
 let mainWindow;
@@ -6,6 +6,15 @@ let mainWindow;
 function createWindow() {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
   
+  // Grant all required permissions automatically (File System Access API)
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    callback(true);
+  });
+  
+  session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+    return true;
+  });
+
   mainWindow = new BrowserWindow({
     width: Math.floor(width * 0.8),
     height: Math.floor(height * 0.8),

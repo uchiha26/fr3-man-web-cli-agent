@@ -147,8 +147,9 @@ export default function App() {
   };
 
   const exportSettings = () => {
+    // We explicitly exclude apiKeys here so users can safely share their 
+    // fr3man_settings.json with others without leaking their passwords/tokens
     const settings = {
-      apiKeys,
       baseUrl,
       ollamaContextLength,
       personality,
@@ -186,7 +187,7 @@ export default function App() {
       reader.onload = (event) => {
         try {
           const settings = JSON.parse(event.target?.result as string);
-          if (settings.apiKeys !== undefined) setApiKeys(settings.apiKeys);
+          // Api Keys deliberately skipped over during import to protect the user's current environment
           if (settings.baseUrl !== undefined) setBaseUrl(settings.baseUrl);
           if (settings.ollamaContextLength !== undefined) setOllamaContextLength(settings.ollamaContextLength);
           if (settings.personality !== undefined) setPersonality(settings.personality);
